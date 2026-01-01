@@ -1,5 +1,5 @@
 {
-  "protocols": ["https:"],
+  "protocols": ["https:","http"],
   "hostnames": [
     "www.packyapi.com",
     "api-slb.packyapi.com",
@@ -8,7 +8,9 @@
     "www.galaapi.com",
     "privnode.com",
     "jp.privnode.com",
-    "privcoding.cc"
+    "privcoding.cc",
+    "localhost",
+    "127.0.0.1"
   ]
 }
 

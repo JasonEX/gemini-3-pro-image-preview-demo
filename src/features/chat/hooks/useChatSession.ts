@@ -160,7 +160,7 @@ const writePersistedChat = (payload: PersistedChatPayload): { savedAt: string; d
   try {
     window.localStorage?.setItem(CHAT_PERSIST_STORAGE_KEY, JSON.stringify(full));
     return { savedAt, didFallback: false };
-  } catch (error) {
+  } catch {
     try {
       const slim: PersistedChat = { version: 1, savedAt, payload: slimPersistPayload(payload) };
       window.localStorage?.setItem(CHAT_PERSIST_STORAGE_KEY, JSON.stringify(slim));
@@ -536,6 +536,8 @@ export function useChatSession(): UseChatSessionResult {
     state.includeThinking,
     state.forceImageGuidance,
     state.lastImageData,
+    state.hasSavedConversation,
+    state.savedConversationAt,
   ]);
 
   const addUploads = useCallback(
