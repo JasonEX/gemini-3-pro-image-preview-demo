@@ -2,6 +2,7 @@ export type GeminiRole = 'user' | 'model';
 
 export type GeminiInlineData = {
   mime_type: string;
+  mimeType?: string;
   data: string;
 };
 
@@ -10,6 +11,8 @@ export type GeminiContentPart = {
   inline_data?: GeminiInlineData;
   inlineData?: GeminiInlineData;
   thought?: boolean;
+  thought_signature?: string;
+  thoughtSignature?: string;
 };
 
 export type GeminiMessage = {

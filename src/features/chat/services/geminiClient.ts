@@ -46,16 +46,35 @@ const getModelPath = (): string => {
   return buildModelPath(model || 'gemini-3-pro-image-preview');
 };
 
+const getThoughtSignature = (part?: GeminiContentPart): string | undefined =>
+  part?.thought_signature || part?.thoughtSignature;
+
+const normalizeInlineData = (inlineData: GeminiInlineData): GeminiInlineData => ({
+  mime_type: inlineData.mime_type || inlineData.mimeType || 'image/png',
+  data: inlineData.data,
+});
+
 const cloneHistory = (history: GeminiMessage[] = []): GeminiMessage[] =>
   history.map((message) => ({
-    role: message.role,
-    parts: message.parts.map((part) => {
+    ...message,
+    parts: (message.parts || []).map((part) => {
+      const cloned: GeminiContentPart = { ...part };
+
       const inlineData = part.inline_data || part.inlineData;
-      return {
-        ...(part.text ? { text: part.text } : {}),
-        ...(inlineData ? { inline_data: inlineData } : {}),
-        ...(part.thought ? { thought: part.thought } : {}),
-      };
+      if (inlineData) {
+        cloned.inline_data = normalizeInlineData(inlineData);
+      }
+      delete cloned.inlineData;
+
+      const signature = getThoughtSignature(part);
+      if (signature) {
+        cloned.thought_signature = signature;
+      }
+      delete cloned.thoughtSignature;
+
+      if (cloned.thought !== true) delete cloned.thought;
+
+      return cloned;
     }),
   }));
 
@@ -76,6 +95,32 @@ const buildUserMessage = (prompt: string, images: GeminiInlineDataInput[] = []):
 const getInlineData = (part?: GeminiContentPart): GeminiInlineData | undefined =>
   part?.inline_data || part?.inlineData;
 
+const isImageInlineData = (inlineData?: GeminiInlineData): boolean => {
+  const mimeType = (inlineData?.mime_type || inlineData?.mimeType || '').toLowerCase();
+  return mimeType.startsWith('image/');
+};
+
+const validateHistoryThoughtSignatures = (history: GeminiMessage[]): void => {
+  history.forEach((message, messageIndex) => {
+    if (message.role !== 'model') return;
+
+    const parts = message.parts || [];
+    parts.forEach((part, partIndex) => {
+      if (part.thought) return;
+      const inlineData = getInlineData(part);
+      if (!inlineData || !inlineData.data || !isImageInlineData(inlineData)) return;
+
+      const signature = getThoughtSignature(part);
+      if (signature) return;
+
+      throw new GeminiClientError(
+        `历史记录中存在缺失 thought_signature 的模型图片 part（content #${messageIndex + 1}, part #${partIndex + 1}）。` +
+          `请清空对话或删除该条模型消息后重试。`
+      );
+    });
+  });
+};
+
 const extractText = (response: GeminiResponse): string => {
   const parts = response.candidates?.[0]?.content?.parts || [];
   const textSegments = parts
@@ -87,13 +132,18 @@ const extractText = (response: GeminiResponse): string => {
 
 const extractImageData = (response: GeminiResponse): string | null => {
   const parts = response.candidates?.[0]?.content?.parts || [];
+  let lastImage: string | null = null;
+  let lastNonThoughtImage: string | null = null;
   for (const part of parts) {
     const inlineData = getInlineData(part);
     if (inlineData?.data) {
-      return inlineData.data;
+      lastImage = inlineData.data;
+      if (!part.thought) {
+        lastNonThoughtImage = inlineData.data;
+      }
     }
   }
-  return null;
+  return lastNonThoughtImage || lastImage;
 };
 
 const extractThinkingImages = (response: GeminiResponse): string[] => {
@@ -109,38 +159,21 @@ const extractThinkingImages = (response: GeminiResponse): string[] => {
   return thinkingImages;
 };
 
-const buildAssistantMessageParts = (
-  response: GeminiResponse,
-  includeThinking: boolean
-): { parts: GeminiContentPart[]; thinkingImages: string[]; textParts: Array<{ text: string; thought?: boolean }> } => {
-  const parts: GeminiContentPart[] = [];
-  const textParts: Array<{ text: string; thought?: boolean }> = [];
-  const thinkingImages = includeThinking ? extractThinkingImages(response) : [];
-
-  thinkingImages.forEach((image) => {
-    parts.push({
-      inline_data: { mime_type: 'image/png', data: image },
-      thought: true,
-    });
-  });
-
+const extractTextParts = (response: GeminiResponse): Array<{ text: string; thought?: boolean }> => {
   const candidateParts = response.candidates?.[0]?.content?.parts || [];
-  candidateParts.forEach((part) => {
-    const thought = part.thought ? true : undefined;
+  return candidateParts
+    .filter((part) => typeof part.text === 'string')
+    .map((part) => ({ text: part.text as string, ...(part.thought ? { thought: true } : {}) }));
+};
 
-    if (part.text) {
-      const textPart = { text: part.text, ...(thought ? { thought } : {}) };
-      parts.push(textPart);
-      textParts.push(textPart);
-      return;
-    }
-    const inlineData = getInlineData(part);
-    if (inlineData) {
-      parts.push({ inline_data: inlineData, ...(thought ? { thought } : {}) });
-    }
-  });
+const buildAssistantMessageFromResponse = (response: GeminiResponse): GeminiMessage | null => {
+  const content = response.candidates?.[0]?.content;
+  if (!content || !Array.isArray(content.parts)) return null;
 
-  return { parts, thinkingImages, textParts };
+  return {
+    role: 'model',
+    parts: cloneHistory([{ role: 'model', parts: content.parts }])[0].parts,
+  };
 };
 
 const toGeminiError = (status: number, body: unknown): GeminiClientError => {
@@ -222,6 +255,7 @@ const callGeminiApi = async ({
   }
 
   const safeHistory = cloneHistory(history);
+  validateHistoryThoughtSignatures(safeHistory);
   const userMessage = buildUserMessage(prompt, images);
   const contents = [...safeHistory, userMessage];
 
@@ -241,16 +275,14 @@ const callGeminiApi = async ({
   }
 
   const response = await requestGemini(payload, apiKey, baseUrl);
-  const { parts, thinkingImages, textParts } = buildAssistantMessageParts(response, includeThinking);
-
-  const updatedHistory: GeminiMessage[] =
-    parts.length > 0 ? [...contents, { role: 'model', parts }] : contents;
+  const assistantMessage = buildAssistantMessageFromResponse(response);
+  const updatedHistory: GeminiMessage[] = assistantMessage ? [...contents, assistantMessage] : contents;
 
   return {
     text: extractText(response),
-    parts: textParts,
+    parts: extractTextParts(response),
     imageData: extractImageData(response),
-    thinkingImages,
+    thinkingImages: includeThinking ? extractThinkingImages(response) : [],
     groundingMetadata: response.groundingMetadata,
     history: updatedHistory,
   };

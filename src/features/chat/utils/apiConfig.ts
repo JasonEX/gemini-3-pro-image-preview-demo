@@ -217,7 +217,7 @@ const setOpenAIModel = (model: string): void => {
 export const MODEL_LIST: ReadonlyArray<string> = new Proxy([] as string[], {
   get(_target, prop) {
     const list = getOpenAIModelList();
-    const value = (list as Record<PropertyKey, unknown>)[prop];
+    const value = (list as unknown as Record<PropertyKey, unknown>)[prop];
     return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(list) : value;
   },
   ownKeys() {

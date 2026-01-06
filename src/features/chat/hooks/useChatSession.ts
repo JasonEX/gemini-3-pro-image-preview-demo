@@ -5,7 +5,7 @@ import { apiConfig } from '../utils/apiConfig';
 import { createSessionId } from '../utils/session';
 import { limitUploads, toUploadItems } from '../utils/files';
 import type { UploadItem, ChatMessage, ChatMode, AspectRatio, ImageSize } from '../types';
-import type { GeminiContentPart, GeminiInlineDataInput, GeminiMessage, GeminiResult } from '@/types/gemini';
+import type { GeminiInlineDataInput, GeminiMessage, GeminiResult } from '@/types/gemini';
 
 const messageId = (): string =>
   (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
@@ -140,7 +140,13 @@ const slimPersistPayload = (payload: PersistedChatPayload): PersistedChatPayload
     role: msg.role,
     parts: msg.parts
       .filter((p) => typeof p.text === 'string' && p.text.trim().length > 0)
-      .map((p) => ({ text: p.text as string })),
+      .map((p) => ({
+        text: p.text as string,
+        ...(p.thought ? { thought: true } : {}),
+        ...(p.thought_signature || p.thoughtSignature
+          ? { thought_signature: p.thought_signature || p.thoughtSignature }
+          : {}),
+      })),
   }));
 
   return {
@@ -184,49 +190,6 @@ const clearPersistedChat = (): void => {
 const readSavedConversationMeta = (): { hasSavedConversation: boolean; savedConversationAt: string | null } => {
   const saved = readPersistedChat();
   return { hasSavedConversation: !!saved, savedConversationAt: saved?.savedAt || null };
-};
-
-const dataUrlToInlineData = (dataUrl: string): GeminiInlineDataInput | null => {
-  if (!dataUrl || typeof dataUrl !== 'string') return null;
-  const match = dataUrl.match(/^data:(.+?);base64,(.*)$/);
-  if (!match) return null;
-  return { mimeType: match[1], data: match[2] };
-};
-
-const rebuildHistoryFromMessages = (messages: ChatMessage[]): GeminiMessage[] => {
-  const history: GeminiMessage[] = [];
-
-  messages.forEach((msg) => {
-    if (msg.role === 'system') return;
-
-    if (msg.role === 'user') {
-      const parts: GeminiContentPart[] = [];
-      if (msg.text) parts.push({ text: msg.text });
-      (msg.images || [])
-        .map(dataUrlToInlineData)
-        .filter(Boolean)
-        .forEach((inline) => {
-          parts.push({ inline_data: { mime_type: inline!.mimeType || 'image/png', data: inline!.data } });
-        });
-      history.push({ role: 'user', parts: parts.length ? parts : [{ text: '' }] });
-      return;
-    }
-
-    // assistant
-    const parts: GeminiContentPart[] = [];
-    const textParts = (msg.parts || []).filter((p) => p.text && !p.thought).map((p) => p.text);
-    if (textParts.length > 0) {
-      parts.push({ text: textParts.join('\n\n') });
-    } else if (msg.text) {
-      parts.push({ text: msg.text });
-    }
-    if (msg.imageData) {
-      parts.push({ inline_data: { mime_type: 'image/png', data: msg.imageData } });
-    }
-    history.push({ role: 'model', parts: parts.length ? parts : [{ text: '' }] });
-  });
-
-  return history;
 };
 
 const resolveLastImageData = (messages: ChatMessage[]): string | null => {
@@ -308,8 +271,24 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
     case 'deleteMessage': {
+      const messageIndex = state.messages.findIndex((m) => m.id === action.payload);
+      if (messageIndex < 0) return state;
+
+      const message = state.messages[messageIndex];
       const nextMessages = state.messages.filter((m) => m.id !== action.payload);
-      const nextHistory = rebuildHistoryFromMessages(nextMessages);
+
+      let nextHistory = state.history;
+      if (message.role !== 'system') {
+        const historyIndex = state.messages
+          .slice(0, messageIndex)
+          .filter((m) => m.role !== 'system').length;
+
+        const expectedRole = message.role === 'user' ? 'user' : 'model';
+        if (historyIndex < state.history.length && state.history[historyIndex]?.role === expectedRole) {
+          nextHistory = state.history.filter((_, idx) => idx !== historyIndex);
+        }
+      }
+
       const nextLastImageData = resolveLastImageData(nextMessages);
       return {
         ...state,
