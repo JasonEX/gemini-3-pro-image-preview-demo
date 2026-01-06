@@ -1,4 +1,4 @@
-node_modules
+node_modules/
 
 # Build output
 dist/
@@ -8,6 +8,19 @@ dist-ssr/
 .vite/
 *.local
 
+# Env files
+.env*
+!.env.example
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage
+coverage/
+
+# Vercel
+.vercel/
+
 # Logs
 logs/
 *.log
@@ -16,6 +29,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Lock files (keep only pnpm)
-package-lock.json
+# Lock files (repo uses npm)
+pnpm-lock.yaml
 yarn.lock
