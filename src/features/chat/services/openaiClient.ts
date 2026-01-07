@@ -88,13 +88,14 @@ const convertHistoryToOpenAI = (history: GeminiMessage[] = []): OpenAIMessage[] 
       .filter((p) => p.text && !p.thought)
       .map((p) => p.text as string);
 
-    const imageParts = msg.parts
-      .filter((p) => p.inline_data || p.inlineData)
-      .map((p) => {
-        const inlineData = p.inline_data || p.inlineData;
-        return inlineData ? `data:${inlineData.mime_type};base64,${inlineData.data}` : '';
-      })
-      .filter(Boolean);
+  const imageParts = msg.parts
+    .filter((p) => p.inlineData)
+    .map((p) => {
+      const inlineData = p.inlineData;
+      const mimeType = inlineData?.mimeType || 'image/png';
+      return inlineData ? `data:${mimeType};base64,${inlineData.data}` : '';
+    })
+    .filter(Boolean);
 
     if (imageParts.length > 0 && msg.role === 'user') {
       const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [];
@@ -248,12 +249,12 @@ const convertOpenAIResponseToGeminiResult = (
     parts.push({ text: cleanText });
   }
 
-  const assistantParts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [];
+  const assistantParts: GeminiMessage['parts'] = [];
   if (cleanText) {
     assistantParts.push({ text: cleanText });
   }
   if (imageData) {
-    assistantParts.push({ inline_data: { mime_type: 'image/png', data: imageData } });
+    assistantParts.push({ inlineData: { mimeType: 'image/png', data: imageData } });
   }
 
   // 如果没有任何内容，添加一个空文本避免空消息
@@ -307,7 +308,7 @@ const callOpenAIApi = async ({
     parts: [
       { text: prompt },
       ...images.map(({ data, mimeType }) => ({
-        inline_data: { mime_type: mimeType || 'image/png', data },
+        inlineData: { mimeType: mimeType || 'image/png', data },
       })),
     ],
   };

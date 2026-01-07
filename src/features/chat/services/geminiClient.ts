@@ -46,35 +46,36 @@ const getModelPath = (): string => {
   return buildModelPath(model || 'gemini-3-pro-image-preview');
 };
 
-const getThoughtSignature = (part?: GeminiContentPart): string | undefined =>
-  part?.thought_signature || part?.thoughtSignature;
+const getThoughtSignature = (part?: GeminiContentPart): string | undefined => part?.thoughtSignature;
 
 const normalizeInlineData = (inlineData: GeminiInlineData): GeminiInlineData => ({
-  mime_type: inlineData.mime_type || inlineData.mimeType || 'image/png',
   data: inlineData.data,
+  mimeType: inlineData.mimeType || 'image/png',
 });
 
 const cloneHistory = (history: GeminiMessage[] = []): GeminiMessage[] =>
   history.map((message) => ({
-    ...message,
+    role: message.role,
     parts: (message.parts || []).map((part) => {
-      const cloned: GeminiContentPart = { ...part };
+      const normalized: GeminiContentPart = {};
 
-      const inlineData = part.inline_data || part.inlineData;
-      if (inlineData) {
-        cloned.inline_data = normalizeInlineData(inlineData);
+      if (typeof part.text === 'string') {
+        normalized.text = part.text;
       }
-      delete cloned.inlineData;
 
-      const signature = getThoughtSignature(part);
-      if (signature) {
-        cloned.thought_signature = signature;
+      if (part.inlineData?.data) {
+        normalized.inlineData = normalizeInlineData(part.inlineData);
       }
-      delete cloned.thoughtSignature;
 
-      if (cloned.thought !== true) delete cloned.thought;
+      if (part.thought === true) {
+        normalized.thought = true;
+      }
 
-      return cloned;
+      if (part.thoughtSignature) {
+        normalized.thoughtSignature = part.thoughtSignature;
+      }
+
+      return normalized;
     }),
   }));
 
@@ -82,21 +83,18 @@ const buildUserMessage = (prompt: string, images: GeminiInlineDataInput[] = []):
   const parts: GeminiContentPart[] = [{ text: prompt }];
   images.forEach(({ data, mimeType }) => {
     if (!data) return;
-    const inlineData: GeminiInlineData = {
-      mime_type: mimeType || 'image/png',
-      data,
-    };
-    parts.push({ inline_data: inlineData });
+    parts.push({
+      inlineData: normalizeInlineData({ data, mimeType: mimeType || 'image/png' }),
+    });
   });
 
   return { role: 'user', parts };
 };
 
-const getInlineData = (part?: GeminiContentPart): GeminiInlineData | undefined =>
-  part?.inline_data || part?.inlineData;
+const getInlineData = (part?: GeminiContentPart): GeminiInlineData | undefined => part?.inlineData;
 
 const isImageInlineData = (inlineData?: GeminiInlineData): boolean => {
-  const mimeType = (inlineData?.mime_type || inlineData?.mimeType || '').toLowerCase();
+  const mimeType = (inlineData?.mimeType || '').toLowerCase();
   return mimeType.startsWith('image/');
 };
 
@@ -105,16 +103,36 @@ const validateHistoryThoughtSignatures = (history: GeminiMessage[]): void => {
     if (message.role !== 'model') return;
 
     const parts = message.parts || [];
+    const hasNonThoughtImage = parts.some((part) => {
+      if (part.thought) return false;
+      const inlineData = getInlineData(part);
+      return Boolean(inlineData?.data && isImageInlineData(inlineData));
+    });
+    if (!hasNonThoughtImage) return;
+
+    // Gemini 3 image generation/editing: signatures are validated strictly.
+    // They are guaranteed on the first non-thought part and every image part, and must be passed back next turn.
+    const firstNonThoughtIndex = parts.findIndex((part) => part.thought !== true);
+    if (firstNonThoughtIndex >= 0) {
+      const signature = getThoughtSignature(parts[firstNonThoughtIndex]);
+      if (!signature) {
+        throw new GeminiClientError(
+          `历史记录中存在缺失 thoughtSignature 的模型内容 part（content #${messageIndex + 1}, part #${firstNonThoughtIndex + 1}）。` +
+            `请清空对话或删除该条模型消息后重试。`
+        );
+      }
+    }
+
     parts.forEach((part, partIndex) => {
       if (part.thought) return;
       const inlineData = getInlineData(part);
-      if (!inlineData || !inlineData.data || !isImageInlineData(inlineData)) return;
+      if (!inlineData?.data || !isImageInlineData(inlineData)) return;
 
       const signature = getThoughtSignature(part);
       if (signature) return;
 
       throw new GeminiClientError(
-        `历史记录中存在缺失 thought_signature 的模型图片 part（content #${messageIndex + 1}, part #${partIndex + 1}）。` +
+        `历史记录中存在缺失 thoughtSignature 的模型图片 part（content #${messageIndex + 1}, part #${partIndex + 1}）。` +
           `请清空对话或删除该条模型消息后重试。`
       );
     });
@@ -174,6 +192,17 @@ const buildAssistantMessageFromResponse = (response: GeminiResponse): GeminiMess
     role: 'model',
     parts: cloneHistory([{ role: 'model', parts: content.parts }])[0].parts,
   };
+};
+
+const extractGroundingMetadata = (response: GeminiResponse): unknown => {
+  const candidates = response.candidates || [];
+  for (const candidate of candidates) {
+    if (candidate && 'groundingMetadata' in candidate && candidate.groundingMetadata !== undefined) {
+      return candidate.groundingMetadata;
+    }
+  }
+
+  return response.groundingMetadata;
 };
 
 const toGeminiError = (status: number, body: unknown): GeminiClientError => {
@@ -283,7 +312,7 @@ const callGeminiApi = async ({
     parts: extractTextParts(response),
     imageData: extractImageData(response),
     thinkingImages: includeThinking ? extractThinkingImages(response) : [],
-    groundingMetadata: response.groundingMetadata,
+    groundingMetadata: extractGroundingMetadata(response),
     history: updatedHistory,
   };
 };

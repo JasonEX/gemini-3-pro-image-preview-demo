@@ -32,3 +32,5 @@ pnpm-debug.log*
 # Lock files (repo uses npm)
 pnpm-lock.yaml
 yarn.lock
+
+.ace-tool/

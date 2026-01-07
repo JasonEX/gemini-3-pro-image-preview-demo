@@ -28,15 +28,15 @@ export interface ChatMessage {
 
 // API相关类型
 export type GeminiInlineData = {
-  mime_type: string
+  mimeType: string
   data: string
 }
 
 export type GeminiContentPart = {
   text?: string
-  inline_data?: GeminiInlineData
   inlineData?: GeminiInlineData
   thought?: boolean
+  thoughtSignature?: string
 }
 
 export type GeminiContent = {

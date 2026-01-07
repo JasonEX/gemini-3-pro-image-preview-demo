@@ -1,17 +1,14 @@
 export type GeminiRole = 'user' | 'model';
 
 export type GeminiInlineData = {
-  mime_type: string;
-  mimeType?: string;
   data: string;
+  mimeType: string;
 };
 
 export type GeminiContentPart = {
   text?: string;
-  inline_data?: GeminiInlineData;
   inlineData?: GeminiInlineData;
   thought?: boolean;
-  thought_signature?: string;
   thoughtSignature?: string;
 };
 
@@ -36,10 +33,12 @@ export type GeminiRequestPayload = {
 
 export type GeminiCandidate = {
   content?: GeminiMessage;
+  groundingMetadata?: unknown;
 };
 
 export type GeminiResponse = {
   candidates?: GeminiCandidate[];
+  // Some variants/older payloads may surface grounding metadata at the response root.
   groundingMetadata?: unknown;
 };
 

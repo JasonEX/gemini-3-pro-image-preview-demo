@@ -143,9 +143,7 @@ const slimPersistPayload = (payload: PersistedChatPayload): PersistedChatPayload
       .map((p) => ({
         text: p.text as string,
         ...(p.thought ? { thought: true } : {}),
-        ...(p.thought_signature || p.thoughtSignature
-          ? { thought_signature: p.thought_signature || p.thoughtSignature }
-          : {}),
+        ...(p.thoughtSignature ? { thoughtSignature: p.thoughtSignature } : {}),
       })),
   }));
 
