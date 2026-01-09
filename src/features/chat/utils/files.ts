@@ -60,13 +60,28 @@ export function fileToBase64(file: File): Promise<string> {
   });
 }
 
+export function isBlobUrl(url: string | null | undefined): url is string {
+  return typeof url === 'string' && url.startsWith('blob:');
+}
+
+export function revokeObjectUrl(url: string | null | undefined): void {
+  if (!isBlobUrl(url)) return;
+  if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') return;
+
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // Ignore failures for already-revoked / invalid URLs
+  }
+}
+
 export async function toUploadItems(files: File[]): Promise<UploadItem[]> {
-  const loadImageSize = (dataUrl: string): Promise<{ width?: number; height?: number }> =>
+  const loadImageSize = (url: string): Promise<{ width?: number; height?: number }> =>
     new Promise((resolve) => {
       const img = new Image();
       img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
       img.onerror = () => resolve({ width: undefined, height: undefined });
-      img.src = dataUrl;
+      img.src = url;
     });
 
   const promises: Array<Promise<UploadItem>> = [];
@@ -74,17 +89,18 @@ export async function toUploadItems(files: File[]): Promise<UploadItem[]> {
   for (const file of files) {
     if (!isImageFile(file)) continue;
     const promise = (async () => {
-      const dataUrl = await fileToBase64(file);
-      const [, base64] = dataUrl.split(',');
-      const { width, height } = await loadImageSize(dataUrl);
+      // Use createObjectURL for fast preview
+      const objectUrl = URL.createObjectURL(file);
+      const { width, height } = await loadImageSize(objectUrl);
       const aspectRatio = width && height ? width / height : undefined;
 
       return {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        file, // Keep reference to file
         name: file.name,
         mimeType: file.type,
-        base64,
-        dataUrl,
+        base64: "", // Lazy load this later
+        dataUrl: objectUrl, // Use blob URL for display (revoked when upload removed/cleared)
         width,
         height,
         aspectRatio,

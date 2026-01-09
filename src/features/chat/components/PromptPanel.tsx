@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, memo } from 'react'
 import { Search, Send, Plus, Settings2, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -31,7 +31,7 @@ type PromptPanelProps = {
   onEditLast: () => void
 }
 
-export function PromptPanel({
+export const PromptPanel = memo(function PromptPanel({
   prompt,
   onPromptChange,
   onSend,
@@ -284,4 +284,4 @@ export function PromptPanel({
       </div>
     </div>
   )
-}
+})

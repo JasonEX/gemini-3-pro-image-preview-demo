@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, memo } from 'react'
 import { Image as ImageIcon, Sparkles } from 'lucide-react'
 import { MessageItem } from './MessageItem'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ type MessageListProps = {
   onClearSavedConversation: () => void
 }
 
-export function MessageList({
+export const MessageList = memo(function MessageList({
   messages,
   includeThinking,
   onDownload,
@@ -85,4 +85,4 @@ export function MessageList({
       )}
     </div>
   )
-}
+})

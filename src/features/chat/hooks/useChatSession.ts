@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useMemo } from 'react';
 import { geminiClient } from '../services/geminiClient';
 import { openaiClient } from '../services/openaiClient';
 import { apiConfig } from '../utils/apiConfig';
 import { createSessionId } from '../utils/session';
-import { limitUploads, toUploadItems } from '../utils/files';
+import { fileToBase64, isBlobUrl, limitUploads, revokeObjectUrl, toUploadItems } from '../utils/files';
 import type { UploadItem, ChatMessage, ChatMode, AspectRatio, ImageSize } from '../types';
 import type { GeminiInlineDataInput, GeminiMessage, GeminiResult } from '@/types/gemini';
 
@@ -101,6 +101,19 @@ type PersistedChat = {
   payload: PersistedChatPayload;
 };
 
+const sanitizePersistedMessages = (messages: ChatMessage[]): ChatMessage[] =>
+  messages.map((message) => {
+    if (!message.images || message.images.length === 0) return message;
+
+    const nextImages = message.images.filter((src) => typeof src === 'string' && !isBlobUrl(src));
+    if (nextImages.length === message.images.length) return message;
+
+    return {
+      ...message,
+      images: nextImages.length > 0 ? nextImages : undefined,
+    };
+  });
+
 const parsePersistedChat = (raw: string): PersistedChat | null => {
   if (!raw) return null;
 
@@ -110,7 +123,17 @@ const parsePersistedChat = (raw: string): PersistedChat | null => {
     if (parsed.version !== 1) return null;
     if (!parsed.savedAt || typeof parsed.savedAt !== 'string') return null;
     if (!parsed.payload || typeof parsed.payload !== 'object') return null;
-    return parsed;
+
+    const payload = parsed.payload as PersistedChatPayload;
+    const messages = Array.isArray(payload.messages) ? sanitizePersistedMessages(payload.messages) : [];
+
+    return {
+      ...parsed,
+      payload: {
+        ...payload,
+        messages,
+      },
+    };
   } catch {
     return null;
   }
@@ -463,6 +486,35 @@ const applyForceImageGuidance = (prompt: string): string => {
 export function useChatSession(): UseChatSessionResult {
   const [state, dispatch] = useReducer(chatReducer, undefined, createInitialState);
   const didPersistRef = useRef(false);
+  const stateRef = useRef(state);
+  const uploadBlobUrlsRef = useRef<Set<string>>(new Set());
+
+  // Keep ref in sync before user can trigger events (avoid stale reads in stable callbacks).
+  useLayoutEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    const previous = uploadBlobUrlsRef.current;
+    const next = new Set<string>();
+
+    for (const img of state.uploadedImages) {
+      if (isBlobUrl(img.dataUrl)) next.add(img.dataUrl);
+    }
+
+    for (const url of previous) {
+      if (!next.has(url)) revokeObjectUrl(url);
+    }
+
+    uploadBlobUrlsRef.current = next;
+  }, [state.uploadedImages]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of uploadBlobUrlsRef.current) revokeObjectUrl(url);
+      uploadBlobUrlsRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (!didPersistRef.current) {
@@ -522,7 +574,8 @@ export function useChatSession(): UseChatSessionResult {
       const incoming = normalizeFiles(files);
       if (incoming.length === 0) return;
 
-      const usableFiles = limitUploads(state.uploadedImages.length, incoming);
+      const currentState = stateRef.current;
+      const usableFiles = limitUploads(currentState.uploadedImages.length, incoming);
       const items = await toUploadItems(usableFiles);
 
       if (incoming.length > usableFiles.length) {
@@ -531,7 +584,7 @@ export function useChatSession(): UseChatSessionResult {
 
       dispatch({ type: 'addUploads', payload: items });
     },
-    [state.uploadedImages.length]
+    [] // Stable dependency
   );
 
   const removeUpload = useCallback((id: string) => dispatch({ type: 'removeUpload', payload: id }), []);
@@ -554,7 +607,9 @@ export function useChatSession(): UseChatSessionResult {
 
   const sendPrompt = useCallback(
     async (mode: ChatMode = 'generate') => {
+      const currentState = stateRef.current;
       const apiType = apiConfig.getType();
+      
       if (apiType === 'openai') {
         if (mode === 'edit' || mode === 'search') {
           dispatch({
@@ -565,42 +620,98 @@ export function useChatSession(): UseChatSessionResult {
         }
       }
 
-      const trimmedPrompt = state.prompt.trim();
-      const promptText = state.forceImageGuidance ? applyForceImageGuidance(trimmedPrompt) : trimmedPrompt;
+      const trimmedPrompt = currentState.prompt.trim();
+      const promptText = currentState.forceImageGuidance ? applyForceImageGuidance(trimmedPrompt) : trimmedPrompt;
 
       if (!trimmedPrompt && mode !== 'edit') return;
-      if (mode === 'edit' && !state.lastImageData) {
+      if (mode === 'edit' && !currentState.lastImageData) {
         dispatch({ type: 'appendMessage', payload: toSystemMessage('没有可编辑的图片', true) });
         return;
       }
 
-      const userText = buildUserLabel(mode, promptText);
-      const imageDataList: GeminiInlineDataInput[] = state.uploadedImages.map(({ base64, mimeType }) => ({
-        data: base64,
-        mimeType,
-      }));
+      // Convert uploads to base64 so message history can be persisted safely.
+      const conversionResults = await Promise.allSettled(
+        currentState.uploadedImages.map(async (img) => {
+          if (img.base64 && img.dataUrl && !isBlobUrl(img.dataUrl)) return img;
 
-      const userMessage = toUserMessage(userText, state.uploadedImages.map((img) => img.dataUrl));
+          if (img.file) {
+            const dataUrl = await fileToBase64(img.file);
+            const commaIndex = dataUrl.indexOf(',');
+            const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : '';
+            if (!base64) throw new Error('无法解析图片数据');
+            return { ...img, base64, dataUrl };
+          }
+
+          if (img.base64) {
+            return { ...img, dataUrl: `data:${img.mimeType};base64,${img.base64}` };
+          }
+
+          throw new Error('缺少图片文件数据');
+        })
+      );
+
+      const processedUploads: UploadItem[] = [];
+      const failedUploads: string[] = [];
+      const failedUploadIds: string[] = [];
+
+      conversionResults.forEach((result, idx) => {
+        const upload = currentState.uploadedImages[idx];
+        if (result.status === 'fulfilled') {
+          processedUploads.push(result.value);
+          return;
+        }
+
+        const name = upload?.name || `图片 ${idx + 1}`;
+        failedUploads.push(name);
+        if (upload?.id) failedUploadIds.push(upload.id);
+        revokeObjectUrl(upload?.dataUrl);
+        console.error('Failed to convert upload to base64:', name, result.reason);
+      });
+
+      if (failedUploads.length > 0) {
+        dispatch({
+          type: 'appendMessage',
+          payload: toSystemMessage(
+            `图片处理失败：${failedUploads.join('、')}。已从上传列表移除，请重新选择或重试。`,
+            true
+          ),
+        });
+        if (failedUploadIds.length === currentState.uploadedImages.length) {
+          dispatch({ type: 'clearUploads' });
+        } else {
+          failedUploadIds.forEach((id) => dispatch({ type: 'removeUpload', payload: id }));
+        }
+        return;
+      }
+
+      const userText = buildUserLabel(mode, promptText);
+      const imageDataList: GeminiInlineDataInput[] = processedUploads
+        .filter(img => img.base64)
+        .map(({ base64, mimeType }) => ({
+          data: base64,
+          mimeType,
+        }));
+      
+      const userMessage = toUserMessage(userText, processedUploads.map((img) => img.dataUrl));
 
       dispatch({ type: 'appendMessage', payload: userMessage });
       dispatch({ type: 'clearUploads' });
       dispatch({ type: 'setPrompt', payload: '' });
       dispatch({ type: 'setLoading', payload: true });
 
-      // OpenAI 兼容模式下使用安全的默认值，避免不支持的参数影响请求
-      const aspectRatio = apiType === 'openai' ? ('1:1' as AspectRatio) : state.aspectRatio;
-      const imageSize = apiType === 'openai' ? ('1K' as ImageSize) : state.imageSize;
+      const aspectRatio = apiType === 'openai' ? ('1:1' as AspectRatio) : currentState.aspectRatio;
+      const imageSize = apiType === 'openai' ? ('1K' as ImageSize) : currentState.imageSize;
 
       const requestKind = resolveRequestKind(mode, imageDataList.length > 0);
       const requestContext: RequestContext = {
         promptText,
         labelledPrompt: userText,
         imageDataList,
-        history: state.history,
+        history: currentState.history,
         aspectRatio,
         imageSize,
-        includeThinking: state.includeThinking,
-        lastImageData: state.lastImageData,
+        includeThinking: currentState.includeThinking,
+        lastImageData: currentState.lastImageData,
       };
 
       try {
@@ -619,55 +730,46 @@ export function useChatSession(): UseChatSessionResult {
         dispatch({ type: 'setLoading', payload: false });
       }
     },
-    [
-      state.prompt,
-      state.uploadedImages,
-      state.history,
-      state.aspectRatio,
-      state.imageSize,
-      state.includeThinking,
-      state.forceImageGuidance,
-      state.lastImageData,
-    ]
+    [] // Stable dependency
   );
 
-  return {
-    state,
-    actions: {
-      setPrompt: (value: string) => dispatch({ type: 'setPrompt', payload: value }),
-      setAspectRatio: (value: AspectRatio) => dispatch({ type: 'setAspectRatio', payload: value }),
-      setImageSize: (value: ImageSize) => dispatch({ type: 'setImageSize', payload: value }),
-      setIncludeThinking: (value: boolean) => {
-        writeIncludeThinking(value);
-        dispatch({ type: 'setIncludeThinking', payload: value });
-      },
-      setForceImageGuidance: (value: boolean) => {
-        writeForceImageGuidance(value);
-        dispatch({ type: 'setForceImageGuidance', payload: value });
-      },
-      addUploads,
-      removeUpload,
-      deleteMessage: (id: string) => dispatch({ type: 'deleteMessage', payload: id }),
-      restoreSavedConversation: () => {
-        const saved = readPersistedChat();
-        if (!saved) {
-          dispatch({ type: 'appendMessage', payload: toSystemMessage('没有找到可加载的历史对话', true) });
-          return;
-        }
-        writeIncludeThinking(saved.payload.includeThinking);
-        writeForceImageGuidance(saved.payload.forceImageGuidance);
-        dispatch({ type: 'restoreSavedConversation', payload: { savedAt: saved.savedAt, payload: saved.payload } });
-      },
-      clearSavedConversation: () => {
-        clearPersistedChat();
-        dispatch({
-          type: 'setSavedConversationMeta',
-          payload: { hasSavedConversation: false, savedConversationAt: null },
-        });
-      },
-      sendPrompt,
-      reset,
-      downloadImage,
+  // Memoize all actions to ensure stable references
+  const actions = useMemo<ChatActions>(() => ({
+    setPrompt: (value: string) => dispatch({ type: 'setPrompt', payload: value }),
+    setAspectRatio: (value: AspectRatio) => dispatch({ type: 'setAspectRatio', payload: value }),
+    setImageSize: (value: ImageSize) => dispatch({ type: 'setImageSize', payload: value }),
+    setIncludeThinking: (value: boolean) => {
+      writeIncludeThinking(value);
+      dispatch({ type: 'setIncludeThinking', payload: value });
     },
-  };
+    setForceImageGuidance: (value: boolean) => {
+      writeForceImageGuidance(value);
+      dispatch({ type: 'setForceImageGuidance', payload: value });
+    },
+    addUploads,
+    removeUpload,
+    deleteMessage: (id: string) => dispatch({ type: 'deleteMessage', payload: id }),
+    restoreSavedConversation: () => {
+      const saved = readPersistedChat();
+      if (!saved) {
+        dispatch({ type: 'appendMessage', payload: toSystemMessage('没有找到可加载的历史对话', true) });
+        return;
+      }
+      writeIncludeThinking(saved.payload.includeThinking);
+      writeForceImageGuidance(saved.payload.forceImageGuidance);
+      dispatch({ type: 'restoreSavedConversation', payload: { savedAt: saved.savedAt, payload: saved.payload } });
+    },
+    clearSavedConversation: () => {
+      clearPersistedChat();
+      dispatch({
+        type: 'setSavedConversationMeta',
+        payload: { hasSavedConversation: false, savedConversationAt: null },
+      });
+    },
+    sendPrompt,
+    reset,
+    downloadImage,
+  }), [addUploads, removeUpload, sendPrompt, reset, downloadImage]);
+
+  return { state, actions };
 }

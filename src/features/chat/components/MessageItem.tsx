@@ -1,4 +1,4 @@
-import { useState, type HTMLAttributes, type MouseEvent, type ReactNode } from 'react'
+import { useState, type HTMLAttributes, type MouseEvent, type ReactNode, memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -87,7 +87,7 @@ type MessageItemProps = {
   onDelete: (id: string) => void
 }
 
-export function MessageItem({ message, includeThinking, onDownload, onDelete }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, includeThinking, onDownload, onDelete }: MessageItemProps) {
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -256,4 +256,4 @@ export function MessageItem({ message, includeThinking, onDownload, onDelete }: 
       </div>
     </div>
   )
-}
+})

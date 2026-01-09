@@ -1,5 +1,6 @@
 export type UploadItem = {
   id: string
+  file?: File                 // 原始文件对象 (用于延迟转换)
   name: string
   mimeType: string
   base64: string
