@@ -32,6 +32,25 @@ const markdownComponents: Components = {
       </pre>
     )
   },
+  table: ({ children, ...props }: HTMLAttributes<HTMLTableElement>) => (
+    <div className="my-4 w-full overflow-y-hidden overflow-x-auto rounded-lg border">
+      <table className="w-full text-sm" {...props}>
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children, ...props }: HTMLAttributes<HTMLTableSectionElement>) => (
+    <thead className="bg-muted/50 font-medium" {...props}>{children}</thead>
+  ),
+  tr: ({ children, ...props }: HTMLAttributes<HTMLTableRowElement>) => (
+    <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted" {...props}>{children}</tr>
+  ),
+  th: ({ children, ...props }: HTMLAttributes<HTMLTableCellElement>) => (
+    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0" {...props}>{children}</th>
+  ),
+  td: ({ children, ...props }: HTMLAttributes<HTMLTableCellElement>) => (
+    <td className="px-4 py-3 align-middle [&:has([role=checkbox])]:pr-0" {...props}>{children}</td>
+  ),
 }
 
 function getDisplayParts(message: ChatMessage, includeThinking: boolean) {

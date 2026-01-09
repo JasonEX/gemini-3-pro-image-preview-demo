@@ -237,7 +237,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]">
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>设置</DialogTitle>
           <DialogDescription>
@@ -253,7 +253,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="space-y-2">
                 <Label htmlFor="api-type">API 类型</Label>
                 <Select value={apiType} onValueChange={(value: ApiType) => setApiType(value)}>
-                  <SelectTrigger id="api-type">
+                  <SelectTrigger id="api-type" className="w-full">
                     <SelectValue placeholder="选择 API 类型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -277,6 +277,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     value={geminiModel}
                     onChange={(e) => setGeminiModel(e.target.value)}
                     placeholder="gemini-3-pro-image-preview"
+                    className="w-full"
                   />
                   <p className="text-xs text-muted-foreground">
                     输入 Gemini 模型名称，如 gemini-3-pro-image-preview
@@ -291,6 +292,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://www.packyapi.com"
+                  className="w-full"
                 />
                 <div className="flex flex-wrap gap-2 pt-1">
                   {allowedProxyBaseUrls.map((baseUrl) => (

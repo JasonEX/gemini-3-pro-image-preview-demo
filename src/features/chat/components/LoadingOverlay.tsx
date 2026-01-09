@@ -19,14 +19,14 @@ export function LoadingOverlay({ show, message = "正在生成图像，请稍候
 
   return (
     <div
-      className="pointer-events-auto absolute inset-0 flex items-center justify-center transition-opacity duration-200 z-50"
+      className="pointer-events-auto absolute inset-0 flex items-center justify-center transition-opacity duration-200 z-50 p-4"
       aria-hidden={false}
     >
-      <div className="rounded-2xl bg-background/90 shadow-lg border px-6 py-4 flex items-center gap-3 backdrop-blur-sm">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        <div className="flex flex-col">
-          <span className="font-medium text-sm">{message}</span>
-          <span className="text-xs text-muted-foreground">{buildEstimate(imageSize)}</span>
+      <div className="rounded-2xl bg-background/90 shadow-lg border px-4 py-3 md:px-6 md:py-4 flex items-center gap-3 backdrop-blur-sm max-w-[90vw] md:max-w-md">
+        <Loader2 className="h-5 w-5 animate-spin text-primary shrink-0" />
+        <div className="flex flex-col min-w-0">
+          <span className="font-medium text-sm truncate">{message}</span>
+          <span className="text-xs text-muted-foreground break-words leading-tight">{buildEstimate(imageSize)}</span>
         </div>
       </div>
     </div>

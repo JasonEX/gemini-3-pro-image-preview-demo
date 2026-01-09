@@ -42,16 +42,16 @@ export function ControlBar({
   const openAIModelList = apiType === "openai" ? apiConfig.getOpenAIModelList() : []
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground px-1">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-3 sm:gap-x-6 sm:gap-y-2 text-sm text-muted-foreground px-1">
       {/* 模型选择（OpenAI 兼容模式）- 下拉列表 */}
       {apiType === "openai" && (
-        <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4" />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Bot className="h-4 w-4 shrink-0" />
           <Select
             value={openAIModelList.includes(model) ? model : undefined}
             onValueChange={(value) => onModelChange(value as ModelName)}
           >
-            <SelectTrigger className="h-8 w-[240px] border-transparent bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none data-[state=open]:bg-muted">
+            <SelectTrigger className="h-8 flex-1 sm:w-[240px] border-transparent bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none data-[state=open]:bg-muted">
               <SelectValue placeholder={openAIModelList.length === 0 ? "暂无可用模型" : "选择模型"} />
             </SelectTrigger>
             <SelectContent>
@@ -73,10 +73,10 @@ export function ControlBar({
 
       {/* 宽高比选择 */}
       {apiType === "gemini" && (
-        <div className="flex items-center gap-2">
-          <Ratio className="h-4 w-4" />
+        <div className="flex items-center gap-2 flex-1 sm:flex-none min-w-[140px]">
+          <Ratio className="h-4 w-4 shrink-0" />
           <Select value={aspectRatio} onValueChange={(value) => onAspectChange(value as AspectRatio)}>
-            <SelectTrigger className="h-8 w-[140px] border-transparent bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none data-[state=open]:bg-muted">
+            <SelectTrigger className="h-8 w-full sm:w-[140px] border-transparent bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none data-[state=open]:bg-muted">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -93,10 +93,10 @@ export function ControlBar({
 
       {/* 图像大小选择 */}
       {apiType === "gemini" && (
-        <div className="flex items-center gap-2">
-          <Monitor className="h-4 w-4" />
+        <div className="flex items-center gap-2 flex-1 sm:flex-none min-w-[100px]">
+          <Monitor className="h-4 w-4 shrink-0" />
           <Select value={imageSize} onValueChange={(value) => onSizeChange(value as ImageSize)}>
-            <SelectTrigger className="h-8 w-[70px] border-transparent bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none data-[state=open]:bg-muted">
+            <SelectTrigger className="h-8 w-full sm:w-[70px] border-transparent bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none data-[state=open]:bg-muted">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

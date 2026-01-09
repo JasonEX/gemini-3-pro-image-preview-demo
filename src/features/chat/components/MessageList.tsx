@@ -32,9 +32,9 @@ export const MessageList = memo(function MessageList({
   }, [messages])
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-8 scroll-smooth custom-scrollbar">
+    <div className="flex-1 overflow-y-auto p-2 md:p-4 space-y-6 md:space-y-8 scroll-smooth custom-scrollbar">
       {messages.length === 0 ? (
-        <div className="h-full flex items-center justify-center p-8">
+        <div className="h-full flex items-center justify-center p-4 md:p-8">
           <div className="text-center space-y-4">
             <div className="relative inline-block">
               {/* 装饰性渐变背景 */}

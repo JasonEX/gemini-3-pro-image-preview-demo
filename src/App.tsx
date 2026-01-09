@@ -25,7 +25,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen w-full flex-col bg-background text-foreground">
+    <div className="flex h-screen h-dvh w-full flex-col bg-background text-foreground">
       <ChatHeader
         loading={state.loading}
         onReset={actions.reset}

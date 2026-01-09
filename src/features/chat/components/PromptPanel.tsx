@@ -187,7 +187,7 @@ export const PromptPanel = memo(function PromptPanel({
            {/* Collapsible Controls inside the input box */}
           <div className={cn(
              "overflow-hidden transition-all duration-300 ease-in-out px-2",
-              showControls ? "max-h-40 opacity-100 mb-2" : "max-h-0 opacity-0"
+              showControls ? "max-h-[300px] opacity-100 mb-2" : "max-h-0 opacity-0"
            )}>
               <div className="bg-muted/40 rounded-xl p-1.5 mx-1 border border-border/20">
                  <ControlBar
@@ -210,7 +210,7 @@ export const PromptPanel = memo(function PromptPanel({
 
           {/* Bottom Toolbar - Flexbox layout */}
           <div className="flex items-center justify-between p-1.5 pl-3 bg-muted/10 border-t border-border/40">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
@@ -238,7 +238,7 @@ export const PromptPanel = memo(function PromptPanel({
               </Button>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               {apiType === "gemini" && (
                 <Button
                   variant="ghost"
